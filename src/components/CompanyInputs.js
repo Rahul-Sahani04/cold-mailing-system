@@ -1,11 +1,11 @@
-const FormInput = ({ label, value, onChange, placeholder="" }) => {
+const FormInput = ({ label, value, onChangeFunc, placeholder="" }) => {
   return (
-    <div className="input-box">
+    <div className={"input-box "}>
       <label>{label}</label>
       <input
-        type="text"
+        type="message"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChangeFunc(e.target.value)}
         placeholder={placeholder}
       />
     </div>

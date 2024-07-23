@@ -11,51 +11,152 @@ import {
   faPen,
 } from "@fortawesome/free-solid-svg-icons";
 
-import { Button, Accordion } from "react-bootstrap";
-
+import { Button, Accordion, Modal } from "react-bootstrap";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 import FormInput from "./components/CompanyInputs";
-
 import TimeAndDateComponent from "./components/TimeAndDateComponent";
 import EmailModal from "./components/EmailModal";
 import { Form } from "react-bootstrap";
 import DropdownMenuForFormats from "./components/DropdownComp";
-
 import Avvvatars from "avvvatars-react";
 
-import { generate, count } from "random-words";
+import { DialogExample } from "./components/GoogleLoginModal";
+import { DrawerExample } from "./components/SideDrawer";
+
+import { customToast } from "./components/CustomToast";
+import { googleLogout } from "@react-oauth/google";
+
+import ProfileCard from "./components/ProfileCard";
+import { set } from "mongoose";
 
 /**
  * The main component of the email scheduler application.
  *
  * @returns {JSX.Element} The JSX element representing the App component.
  */
-
 function App() {
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState({
+    name: "John Doe",
+    email: "johnDoe@xyz.com",
+    picture: "https://via.placeholder.com/150",
+  });
   const [emails, setEmails] = useState("");
   const [format, setFormat] = useState("format1");
+  const [formatData, setFormatData] = useState("");
   const [subject, setSubject] = useState(
     "Application for Developer position at"
   );
   const [companyName, setCompanyName] = useState("");
   const [companyPost, setCompanyPost] = useState("");
   const [companyPostURL, setCompanyPostURL] = useState("");
+
+  // Drive URL of the users resume and CV
+  const [resumeUrl, setResumeUrl] = useState("");
+  const [cvUrl, setCVUrl] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [scheduledEmails, setScheduledEmails] = useState([]);
-
   const [scheduleTime, setScheduleTime] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
 
   const [show, setShow] = useState(false);
-
   const handleClose = () => setShow(false);
   const handleShow = () => setShow(true);
   const [selectedEmail, setSelectedEmail] = useState(null);
 
   const [barWidth, setBarWidth] = useState("25vw"); // Initial width of the sidebar
   const [isCollapsed, setIsCollapsed] = useState(false); // State to track if sidebar is collapsed
+  const [authCode, setAuthCode] = useState(null);
+  const [sendImmediately, setSendImmediately] = useState(false); // Check if the sendImmediately checkbox is checked
+
+  const [button, setButton] = useState(false);
+
+  const [isCustomFormat, setIsCustomFormat] = useState(false);
+
+  // Access the API from env file
+  const api = process.env.REACT_APP_API_URL;
+
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("user"));
+    if (user) {
+      fetchScheduledEmails();
+    }
+  }, [user]);
+
+  const toggleBar = () => {
+    if (isCollapsed) {
+      setBarWidth("25vw"); // Expand the sidebar width
+    } else {
+      setBarWidth("7vw"); // Collapse the sidebar width
+    }
+    setIsCollapsed(!isCollapsed); // Toggle the collapsed state
+  };
+
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("user"));
+    if (
+      user &&
+      user.access_token &&
+      user.access_token !== null &&
+      user.access_token !== undefined
+    ) {
+      axios
+        .get(
+          `https://www.googleapis.com/oauth2/v1/userinfo?access_token=${user.access_token}`,
+          {
+            headers: {
+              Authorization: `Bearer ${user.access_token}`,
+              Accept: "application/json",
+            },
+          }
+        )
+        .then((res) => {
+          setProfile(res.data);
+        })
+        .catch((err) => {
+          console.log(err);
+          setUser(null);
+          localStorage.removeItem("user");
+          toast.error("Please login again to continue.");
+        });
+    } else {
+      if (button) {
+        button.click();
+      }
+    }
+  }, [user, button]);
+
+  const useToggleState = (initial = false) => {
+    const [state, setState] = React.useState(initial);
+
+    const close = () => {
+      setState(false);
+    };
+
+    const open = () => {
+      console.log("open");
+      setState(true);
+    };
+
+    const toggleDrawer = () => {
+      setState((state) => !state);
+    };
+
+    const hookData = [state, open, close, toggleDrawer];
+
+    hookData.state = state;
+    hookData.openDrawer = open;
+    hookData.closeDrawer = close;
+    hookData.toggleDrawer = toggleDrawer;
+    return hookData;
+  };
+
+  const [stateDrawer, openDrawer, closeDrawer, toggleDrawer] = useToggleState();
+
+  // Functions
 
   const handleUpdateClick = (index) => {
     setSelectedEmail({ ...scheduledEmails[index], index });
@@ -63,14 +164,12 @@ function App() {
 
   const deleteScheduledEmail = async (index) => {
     try {
-      const response = await fetch(`${api}/delete-scheduled-email/${index}`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
+      const response = await axios.delete(
+        `${api}/delete-scheduled-email/${user.id}/${index}`
+      );
+      if (response.status === 200) {
         toast.success(`Scheduled email has been deleted!`);
         fetchScheduledEmails();
-
-        // Optionally, refresh the list of scheduled emails here
       } else {
         toast.error("Failed to delete the scheduled email.");
       }
@@ -82,74 +181,56 @@ function App() {
     }
   };
 
-  // Check if the sendImmediately checkbox is checked
-  const [sendImmediately, setSendImmediately] = useState(false);
-
-  function customToast(message) {
-    return toast.custom((t) => (
-      <button
-        disabled
-        type="button"
-        class="py-2.5 px-5 me-2 text-sm font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 inline-flex items-center"
-      >
-        <svg
-          aria-hidden="true"
-          role="status"
-          class="inline w-4 h-4 me-3 text-gray-200 animate-spin dark:text-gray-600"
-          viewBox="0 0 100 101"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z"
-            fill="currentColor"
-          />
-          <path
-            d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z"
-            fill="#1C64F2"
-          />
-        </svg>
-        {message}
-      </button>
-    ));
-  }
-  // Acces the api from env file
-  // const api = "http://localhost:3001"
-  const api = process.env.REACT_APP_API_URL;
-
-  const promiseHandler = (submitFunction) => {
-    toast.promise(submitFunction, {
-      loading: "Sending...",
-      success: (
-        <b>Mail {sendImmediately ? "sent" : "scheduled"} successfully.</b>
-      ),
-      error: <b>Failed to {sendImmediately ? "sent" : "scheduled"} mail.</b>,
-    });
-  };
-
-  // Send the email immediately on form submission (without scheduling)
   const handleSubmitImmediately = async (e) => {
     e.preventDefault();
+    console.log(JSON.parse(localStorage.getItem("user")).access_token);
     const toastId = customToast("Sending...");
     try {
       await axios.post(api + "/send-email", {
+        userName: profile.name,
+        userEmail: profile.email,
         emails,
         format,
         subject,
         companyName,
         companyPost,
         companyPostURL,
+        resumeUrl,
+        cvUrl,
+        accessToken: JSON.parse(localStorage.getItem("user")).access_token,
       });
+      toast.success("Mail sent successfully");
     } catch (error) {
       toast.dismiss(toastId.id);
-      // Throw a new error or handle it appropriately
-      toast.error("Error scheduling email. ");
-      console.error("Failed to schedule mail");
+      toast.error("Error sending email. ");
+      console.error("Failed to send mail", error);
     } finally {
       toast.dismiss(toastId.id);
       setLoading(false);
     }
-    toast.success("Mail scheduled successfully");
+  };
+
+  const handleSubmitImmediatelyCustom = async (e) => {
+    e.preventDefault();
+    console.log(JSON.parse(localStorage.getItem("user")).access_token);
+    const toastId = customToast("Sending...");
+    try {
+
+      await axios.post(api + "/send-custom-email", {
+        emails,
+        subject,
+        customFormat : formatData,
+        accessToken: JSON.parse(localStorage.getItem("user")).access_token,
+      });
+      toast.success("Mail sent successfully");
+    } catch (error) {
+      toast.dismiss(toastId.id);
+      toast.error("Error sending email. ");
+      console.error("Failed to send mail", error);
+    } finally {
+      toast.dismiss(toastId.id);
+      setLoading(false);
+    }
   };
 
   const handleSubmitScheduled = async (e, newScheduleTime) => {
@@ -163,14 +244,43 @@ function App() {
         companyName,
         companyPost,
         companyPostURL,
+        resumeUrl,
+        cvUrl,
         scheduleTime: newScheduleTime,
+        userEmail: profile.email,
+        accessToken: user.access_token,
+        refreshToken: user.refresh_token,
       });
       await fetchScheduledEmails(); // Wait for fetching scheduled emails to complete
     } catch (error) {
       toast.dismiss(toastId.id);
-      // Throw a new error or handle it appropriately
       toast.error("Error scheduling email. ");
-      console.error("Failed to schedule mail");
+      console.error("Failed to schedule mail", error);
+    } finally {
+      toast.dismiss(toastId.id);
+      setLoading(false);
+    }
+    toast.success("Mail scheduled successfully");
+  };
+
+  const handleSubmitScheduledCustom = async (e, newScheduleTime) => {
+    e.preventDefault();
+    const toastId = customToast("Sending...");
+    const user = JSON.parse(localStorage.getItem("user"));
+    try {
+      await axios.post(api + "/schedule-custom-email", {
+        userId: profile.id,
+        emails,
+        subject,
+        scheduleTime: newScheduleTime,
+        formatData,
+        accessToken: user.access_token,
+      });
+      await fetchScheduledEmails(); // Wait for fetching scheduled emails to complete
+    } catch (error) {
+      toast.dismiss(toastId.id);
+      toast.error("Error scheduling email. ");
+      console.error("Failed to schedule mail", error);
     } finally {
       toast.dismiss(toastId.id);
       setLoading(false);
@@ -182,21 +292,48 @@ function App() {
     e.preventDefault();
     setLoading(true);
 
+    const user = JSON.parse(localStorage.getItem("user"));
+
     try {
+      if (!user) {
+        toast.error("Please login to continue.");
+        return;
+      }
+
+      if (!emails) {
+        toast.error("Please enter the email address.");
+        return;
+      }
+
+      if (!subject) {
+        toast.error("Please enter the subject.");
+        return;
+      }
+
+      if (isCustomFormat && sendImmediately) {
+        await handleSubmitImmediatelyCustom(e);
+        return;
+      }
+
       if (sendImmediately) {
         return handleSubmitImmediately(e);
       }
 
-      // Combine date and time into a single string in the format: second (optional), minute, hour, day of month, month, day of week
       const newScheduleTime = `${time.split(":")[1]} ${time.split(":")[0]} ${
         date.split("-")[2]
       } ${date.split("-")[1]} *`;
-
-      console.log("scheduleTime:", newScheduleTime);
       setScheduleTime(newScheduleTime);
 
-      // Update handleSubmitScheduled to use the newScheduleTime instead of state
-      handleSubmitScheduled(e, newScheduleTime);
+      if (!newScheduleTime) {
+        toast.error("Please select a date and time to schedule the email.");
+        return;
+      }
+
+      if (isCustomFormat) {
+        await handleSubmitScheduledCustom(e, newScheduleTime);
+        return;
+      }
+      await handleSubmitScheduled(e, newScheduleTime);
     } catch (error) {
       toast.error("Error scheduling email: " + error.message);
     } finally {
@@ -206,10 +343,22 @@ function App() {
 
   const fetchScheduledEmails = async () => {
     try {
-      const response = await axios.get(api + "/scheduled-emails");
+      const response = await axios.get(`${api}/scheduled-emails/${profile.id}`);
+      console.log("Scheduled emails:", response.data);
       setScheduledEmails(response.data);
     } catch (error) {
       console.error("Error fetching scheduled emails:", error);
+    }
+  };
+
+  const getFormat = async () => {
+    try {
+      const response = await axios.get(`${api}/email-formats/${format}`);
+      const data = await response.data.content;
+      setFormatData(data);
+      return data;
+    } catch (error) {
+      console.error("Error fetching format:", error);
     }
   };
 
@@ -217,23 +366,29 @@ function App() {
     setFormat(e.target.value);
   };
 
-  useEffect(() => {
-    fetchScheduledEmails();
-  }, []);
-
-
-
-  const toggleBar = () => {
-    if (isCollapsed) {
-      setBarWidth("25vw"); // Expand the sidebar width
-    } else {
-      setBarWidth("7vw"); // Collapse the sidebar width
-    }
-    setIsCollapsed(!isCollapsed); // Toggle the collapsed state
+  const logOut = () => {
+    googleLogout();
+    setProfile(null);
+    setUser(null);
+    localStorage.removeItem("user");
   };
 
   return (
     <div className="App">
+      <DialogExample
+        setAuthCode={setAuthCode}
+        setUser={setUser}
+        api={api}
+        setButton={setButton}
+        setProfile={setProfile}
+      />
+      <DrawerExample
+        isOpen={stateDrawer}
+        onClose={closeDrawer}
+        onOpen={openDrawer}
+        api={api}
+      />
+
       <Toaster />
       <EmailModal
         show={show}
@@ -241,227 +396,189 @@ function App() {
         selectedEmail={selectedEmail}
         handleUpdateSubmit={handleSubmit}
       />
+      <section className="profile">
+        <ProfileCard profile={profile} logOut={logOut} button={button} />
+        <div className=" !m-0   h-[75px] w-full">
+          <Button
+            onClick={openDrawer}
+            className="h-full w-full mt-2 !bg-neutral-500/40 hover:!bg-neutral-400/80 !flex !justify-around !items-center"
+          >
+            <img
+              src="https://i0.wp.com/businesspost.ng/wp-content/uploads/2023/12/Google-Gemini-AI-Model-2.png?fit=2699%2C2495&ssl=1"
+              alt="Google Gemini"
+              className="h-2/3 w-1/4"
+            />
+            <p className="text-center text-lg  relative border-l-2 pt-0 pl-1 w-1/2 self-end">
+              Try Gemini
+            </p>
+          </Button>
+        </div>
+      </section>
       <section className="container">
         <header className="App-header">
           <h1>Email Scheduler</h1>
         </header>
 
-          <form className="form form-group" onSubmit={handleSubmit}>
-            <FormInput
-              value={emails}
-              onChange={setEmails}
-              className="form-control"
-              label={"Emails (comma-separated):"}
-              placeholder={"e.g. abc@google.com, xyz@microsoft.com"}
+        <form className="form form-group" onSubmit={handleSubmit}>
+          <Form.Group controlId="customFormat">
+            <Form.Check
+              type="checkbox"
+              label="Custom Format"
+              checked={isCustomFormat}
+              onChange={(e) => setIsCustomFormat(e.target.checked)}
             />
-
+          </Form.Group>
+          <FormInput
+            value={emails}
+            onChangeFunc={setEmails}
+            className="form-control"
+            label={"Emails (comma-separated):"}
+            placeholder={"e.g. abc@google.com, xyz@microsoft.com"}
+          />
+          {!isCustomFormat && (
             <DropdownMenuForFormats
               format={format}
               handleFormatChange={handleFormatChange}
             />
-
-            <div className="input-box">
-              <label>Subject:</label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              />
-            </div>
-            {["format1", "format2", "format3"].includes(format) && (
-              <>
-                <div className="column">
+          )}
+          <div className="input-box">
+            <label>Subject:</label>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+          {!isCustomFormat ? (
+            <>
+              {["format1", "format3"].includes(format) && (
+                <>
                   <FormInput
                     value={companyName}
-                    onChange={setCompanyName}
+                    onChangeFunc={setCompanyName}
+                    className="form-control"
                     label={"Company Name:"}
-                    placeholder="e.g. Google"
                   />
-                  {["format1", "format3"].includes(format) && (
-                    <>
-                      <FormInput
-                        value={companyPost}
-                        onChange={setCompanyPost}
-                        label={"Company Post:"}
-                        placeholder="e.g. Software Developer"
-                      />
-                      <FormInput
-                        value={companyPostURL}
-                        onChange={setCompanyPostURL}
-                        label={"Company Post URL:"}
-                        placeholder="e.g. https://careers.google.com/"
-                      />
-                    </>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Add a checkbox to allow the user to send the email immediately */}
-
-            <label className="CheckBoxContainer">
-              <input
-                type="checkbox"
-                id="sendImmediately"
-                name="sendImmediately"
-                checked={sendImmediately}
-                onChange={(e) => setSendImmediately(e.target.checked)}
-              />
-              <label htmlFor="sendImmediately">Send email immediately</label>
-              <div className="checkmark"></div>
-            </label>
-            <div>
-              <label>Schedule Time (cron format, IST):</label>
-            </div>
-
-            <TimeAndDateComponent
-              date={date}
-              setDate={setDate}
-              time={time}
-              setTime={setTime}
-              sendImmediately={sendImmediately}
-            />
-          </form>
-      </section>
-
-      <aside className="App-aside " id="appAsideBar" style={{ width: barWidth }}>
-        <div onClick={toggleBar} className="hover:cursor-pointer w-fit">
-          {isCollapsed ? (
-            <FontAwesomeIcon
-              icon={faUpRightAndDownLeftFromCenter}
-              className="transition-all delay-100 duration-500 ease-in-out m-2"
-            />
-          ) : (
-            <FontAwesomeIcon
-              icon={faDownLeftAndUpRightToCenter}
-              className="transition-all delay-100 duration-500 ease-in-out m-2"
-            />
-          )}
-        </div>
-        {!isCollapsed ? (
-          <>
-            <div className="h4 text-center">Upcoming Scheduled Emails</div>
-          </>
-        ) : (
-          <></>
-        )}
-        <div id="scheduled-emails">
-          {scheduledEmails.length === 0 ? (
-            <>
-              {!isCollapsed ? (
-                <>
-                  <div className="my-3">
-                    {/* Display a message when there are no scheduled emails */}
-                    There are no scheduled emails.
-                  </div>
-                  <div className="emptyMailbox">
-                    {/* Placeholder for empty mailbox */}
-                  </div>
+                  <FormInput
+                    value={companyPost}
+                    onChangeFunc={setCompanyPost}
+                    className="form-control"
+                    label={"Company Post:"}
+                  />
+                  <FormInput
+                    value={companyPostURL}
+                    onChangeFunc={setCompanyPostURL}
+                    className="form-control"
+                    label={"Company Post URL:"}
+                  />
                 </>
-              ) : (
-                <></>
               )}
+              <FormInput
+                value={resumeUrl}
+                onChangeFunc={setResumeUrl}
+                className="form-control"
+                label={"Resume URL:"}
+              />
+              <FormInput
+                value={cvUrl}
+                onChangeFunc={setCVUrl}
+                className="form-control"
+                label={"CV URL:"}
+              />
             </>
           ) : (
             <>
-              {!isCollapsed &&
-                scheduledEmails.map((email, index) => (
-                  <div key={index}>
-                    <Accordion className="my-3">
-                      <Accordion.Item eventKey={index}>
-                        <Accordion.Header>
-                          <div className=" flex items-center justify-start flex-row w-full">
-                            <div className="w-fit mr-[15px]">
-                              {/* Avatar */}
-                              {email.companyName ? (
-                                <Avvvatars value={email.companyName} />
-                              ) : (
-                                <Avvvatars style="shape" value={generate()} />
-                              )}
-                            </div>
-                            <div className="">
-                              {email.companyName}
-                              <br />
-                              <span
-                                style={{ fontSize: "12px" }}
-                                className="d-flex justify-content-space-between"
-                              >
-                                {email.scheduleTime
-                                  .split(" ")
-                                  .slice(0, 2)
-                                  .reverse()
-                                  .join(":")}{" "}
-                                &nbsp;&nbsp;
-                                {email.scheduleTime
-                                  .split(" ")
-                                  .slice(2, 4)
-                                  .join("-")}
-                                -2024
-                              </span>
-                            </div>
-                            <div className="col-2"></div>
-                          </div>
-                        </Accordion.Header>
-                        <Accordion.Body
-                          style={{ paddingBottom: "0px", paddingLeft: "0.9vw" }}
-                        >
-                          <b> Subject : </b> {email.subject} <br />
-                          <b>To:</b>
-                          <div className="h-20 overflow-scroll no-scrollbar">
-                            {email.emails}
-                          </div>
-                        </Accordion.Body>
-
-                        <div className="w-full flex flex-row">
-                          <button
-                            className="delete-button"
-                            type="button"
-                            onClick={() => deleteScheduledEmail(index)}
-                          >
-                            <span className="button__text">Delete</span>
-                            <span className="button__icon">
-                              <FontAwesomeIcon icon={faTrash} color="white" />
-                            </span>
-                          </button>
-
-                          <button
-                            className="delete-button delete-update-button"
-                            type="button"
-                            onClick={() => {
-                              handleShow();
-                              handleUpdateClick(index);
-                            }}
-                          >
-                            <span className="button__text">Update</span>
-                            <span className="button__icon">
-                              <FontAwesomeIcon icon={faPen} color="white" />
-                            </span>
-                          </button>
-                        </div>
-                      </Accordion.Item>
-                    </Accordion>
-                  </div>
-                ))}
-
-              {isCollapsed && (
-                
-                // <div className="mt-4 flex flex-col align-middle">
-                <div className="mt-4 d-flex align-items-center justify-content-center">
-                  {scheduledEmails.map((email, index) => (
-                    <div key={index} className="flex justify-center">
-                      {email.companyName ? (
-                        <Avvvatars size={42} value={email.companyName} borderSize={2} borderColor="#FFF"/>
-                      ) : (
-                        <Avvvatars size={42} style="shape" value={generate()} />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="input-box h-[225px]">
+                <label>Format:</label>
+                <textarea
+                  value={formatData}
+                  onChange={(e) => setFormatData(e.target.value)}
+                  className="form-control "
+                  style={{
+                    height: "200px",
+                    fontSize: "14px",
+                  }}
+                  placeholder="Enter the format or Try Gemini"
+                />
+              </div>
             </>
           )}
+
+          <Form.Group controlId="sendImmediately" className="mt-3">
+            <Form.Check
+              type="checkbox"
+              label="Send Immediately"
+              checked={sendImmediately}
+              onChange={(e) => setSendImmediately(e.target.checked)}
+            />
+          </Form.Group>
+
+          <>
+            {!sendImmediately && (
+              <TimeAndDateComponent
+                date={date}
+                setDate={setDate}
+                time={time}
+                setTime={setTime}
+              />
+            )}
+          </>
+
+          <Button type="submit" variant="success" className="mt-3">
+            Schedule
+          </Button>
+        </form>
+      </section>
+      <section className="App-aside" style={{ width: barWidth }}>
+        <div className="toggle-btn" onClick={toggleBar}>
+          <FontAwesomeIcon
+            icon={
+              isCollapsed
+                ? faUpRightAndDownLeftFromCenter
+                : faDownLeftAndUpRightToCenter
+            }
+          />
         </div>
-      </aside>
+        {
+          // Display the scheduled emails only the bar is not collapsed
+          !isCollapsed && (
+            <div className="email-item">
+              <div className="profile-details">
+                <Avvvatars value={profile?.name || "John Doe"} />
+                <h3 className="text-capitalize">
+                  {profile?.name || "John Doe"}
+                </h3>
+                <p>{profile?.email || "john.doe@example.com"}</p>
+              </div>
+              <Accordion defaultActiveKey="0">
+                <Accordion.Item eventKey="0">
+                  <Accordion.Header>Scheduled Emails</Accordion.Header>
+                  <Accordion.Body>
+                    {scheduledEmails.map((email, index) => (
+                      <div key={index} className="email-item">
+                        <p>{email.subject}</p>
+                        <p>{email.scheduleTime}</p>
+                        <Button
+                          variant="warning"
+                          onClick={() => handleUpdateClick(index)}
+                        >
+                          <FontAwesomeIcon icon={faPen} />
+                        </Button>
+                        <Button
+                          variant="danger"
+                          onClick={() => deleteScheduledEmail(index)}
+                        >
+                          <FontAwesomeIcon icon={faTrash} />
+                        </Button>
+                      </div>
+                    ))}
+                  </Accordion.Body>
+                </Accordion.Item>
+              </Accordion>
+            </div>
+          )
+        }
+      </section>
     </div>
   );
 }

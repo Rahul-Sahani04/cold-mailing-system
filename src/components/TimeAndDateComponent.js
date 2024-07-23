@@ -19,7 +19,6 @@ const TimeAndDateComponent = ({ date, setDate, time, setTime, sendImmediately })
           sendImmediately={sendImmediately}
         />
       </div>
-      <button type="submit">Schedule Email</button>
     </>
   );
 };

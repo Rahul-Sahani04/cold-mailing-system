@@ -14,10 +14,33 @@ const { emailContents } = require("./EmailFormat");
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  "http://localhost:3000/auth/google/callback" // This should match the redirect URI in the Google Cloud Console
+  "http://localhost:4001/oauth2callback" // This should match the redirect URI in the Google Cloud Console
 );
 
+
+
 const scheduledTasks = {}; // Using an object to store tasks per user
+const userTokens = {}; // In-memory store for demonstration
+
+function getTokensForUser(userId) {
+  return new Promise((resolve, reject) => {
+    const tokens = userTokens[userId];
+    if (tokens) {
+      resolve(tokens);
+    } else {
+      reject('No tokens found for user');
+    }
+  });
+}
+
+function updateTokensForUser(userId, tokens) {
+  return new Promise((resolve) => {
+    userTokens[userId] = tokens;
+    resolve();
+  });
+}
+
+
 
 const app = express();
 const upload = multer();
@@ -96,17 +119,37 @@ app.post("/generate-email-content", async (req, res) => {
   }
 });
 
-app.post("/api/send-auth-code", async (req, res) => {
-  const { code } = req.body;
+
+app.get("/oauth2callback", (req, res) => {
+  const code = req.query.code;
+  oauth2Client.getToken(code, (err, tokens) => {
+    if (err) {
+      console.error('Error getting OAuth tokens:', err);
+      return res.status(500).send('Error getting OAuth tokens');
+    }
+    oauth2Client.setCredentials(tokens);
+    // Store tokens as necessary
+    res.redirect('/success');
+  });
+});
+
+
+app.post('/exchange-code', async (req, res) => {
+  const { code, userId } = req.body;
+
   try {
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
-    res.send({ success: true, tokens });
+
+    await updateTokensForUser(userId, tokens);
+
+    res.send({ success: true, access_token: tokens.access_token, refresh_token: tokens.refresh_token, user: tokens });
   } catch (error) {
-    console.error("Error exchanging auth code for tokens:", error);
-    res.status(500).send({ success: false, error: error.message });
+    console.error('Error exchanging code:', error);
+    res.status(500).send('Error exchanging code');
   }
 });
+
 
 // Send email immediately using Gmail API and OAuth2 access token of the user
 app.post("/send-email", upload.none(), async (req, res) => {
@@ -284,24 +327,6 @@ app.post("/schedule-email", upload.none(), async (req, res) => {
   res.status(200).send("Email scheduled successfully");
 });
 
-app.get("/scheduled-emails/:userId", (req, res) => {
-  const { userId } = req.params;
-  if (scheduledTasks[userId]) {
-    res.status(200).json(
-      scheduledTasks[userId]
-        .map((task, index) => ({
-          index,
-          mailOptions: task.mailOptions,
-          scheduleTime: task.scheduleTime,
-        }))
-        .sort((a, b) => a.scheduleTime.localeCompare(b.scheduleTime))
-    );
-  } else {
-    res.status(200).json([]);
-  }
-});
-
-
 
 
 app.post("/schedule-custom-email", upload.none(), async (req, res) => {
@@ -311,12 +336,12 @@ app.post("/schedule-custom-email", upload.none(), async (req, res) => {
     subject,
     scheduleTime,
     formatData,
-    accessToken
   } = req.body;
 
   try {
-    oauth2Client.setCredentials({ access_token: accessToken });
+    const tokens = await getTokensForUser(userId);
 
+    oauth2Client.setCredentials(tokens);
 
     const content = formatData;
     const emailArray = emails.split(',');
@@ -382,6 +407,25 @@ app.post("/schedule-custom-email", upload.none(), async (req, res) => {
 });
 
 
+
+
+
+app.get("/scheduled-emails/:userId", (req, res) => {
+  const { userId } = req.params;
+  if (scheduledTasks[userId]) {
+    res.status(200).json(
+      scheduledTasks[userId]
+        .map((task, index) => ({
+          index,
+          mailOptions: task.mailOptions,
+          scheduleTime: task.scheduleTime,
+        }))
+        .sort((a, b) => a.scheduleTime.localeCompare(b.scheduleTime))
+    );
+  } else {
+    res.status(200).json([]);
+  }
+});
 
 app.delete("/delete-scheduled-email/:userId/:index", (req, res) => {
   const { userId, index } = req.params;

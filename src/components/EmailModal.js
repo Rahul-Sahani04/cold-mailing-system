@@ -19,6 +19,10 @@ const EmailModal = ({ show, handleClose, selectedEmail, handleUpdateSubmit }) =>
                             Comapny Post: <input type="text" name="companyPost" className="form-control" defaultValue={selectedEmail.companyPost} /><br />
                             Company Post URL: <input type="text" name="companyPostURL" className="form-control" defaultValue={selectedEmail.companyPostURL} /><br />
                             Scheduled Time: <input type="text" name="scheduleTime" className="form-control" defaultValue={selectedEmail.scheduleTime} /><br />
+
+                            {/* Drive URLs of Resume and Cover Letter */}
+                            Resume URL: <input type="text" name="resumeURL" className="form-control" defaultValue={selectedEmail.resumeURL} /><br />
+                            Cover Letter URL: <input type="text" name="coverLetterURL" className="form-control" defaultValue={selectedEmail.cvURL} /><br />
                             {/* <button type="submit">Update Email</button> */}
                         </form>
                     )}
